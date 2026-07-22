@@ -11,6 +11,7 @@
   body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:#12233b;font-size:15px;}
   header{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5;}
   header h1{margin:0;font-size:17px;} header .sub{font-size:12px;opacity:.9;margin-top:2px;}
+  .modo{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);}
   .wrap{padding:12px 12px 90px;max-width:640px;margin:0 auto;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;}
   .card h2{font-size:14px;margin:0 0 8px;color:var(--brand);}
@@ -36,7 +37,7 @@
 </head>
 <body>
 <header>
-  <h1>📦 Inventario XR3</h1>
+  <h1>📦 Inventario XR3 <span class="modo" id="hmodo"></span></h1>
   <div class="sub" id="hsub">Cargando…</div>
 </header>
 <div class="wrap">
@@ -48,23 +49,29 @@
     <h2>📷 Escanear equipos</h2>
     <button class="btn-scan" id="btnScan">▶ Iniciar escáner</button>
     <div id="reader"></div>
-    <div class="muted" style="margin-top:6px">Apunta al código de barras/QR del equipo. Se marca solo. También puedes tocar un equipo para marcarlo a mano.</div>
+    <div class="muted" id="scanHelp" style="margin-top:6px"></div>
   </div>
 
-  <div class="card">
+  <!-- DIRIGIDO -->
+  <div class="card" id="cardStock" style="display:none">
     <h2>📦 Stock disponible <span class="cnt" id="cntStock"></span></h2>
     <div class="listwrap"><div id="listStock"></div></div>
   </div>
-
-  <div class="card">
+  <div class="card" id="cardDesi" style="display:none">
     <h2>🔧 Desinstalados a devolver <span class="cnt" id="cntDesi"></span></h2>
     <div class="listwrap"><div id="listDesi"></div></div>
   </div>
-
-  <div class="card">
+  <div class="card" id="cardExtra" style="display:none">
     <h2>➕ Sobrantes (no listados) <span class="cnt" id="cntExtra"></span></h2>
     <div id="listExtra" class="muted">Ninguno.</div>
     <textarea id="extraManual" placeholder="Opcional: pega aquí series no listadas (una por línea)"></textarea>
+  </div>
+
+  <!-- CIEGO -->
+  <div class="card" id="cardScan" style="display:none">
+    <h2>📋 Equipos escaneados <span class="cnt" id="cntScan"></span></h2>
+    <div class="listwrap"><div id="listScan" class="muted">Escanea TODOS los equipos que el técnico tiene. No verás la lista esperada.</div></div>
+    <textarea id="scanManual" placeholder="Opcional: agrega series a mano (una por línea)"></textarea>
   </div>
 </div>
 
@@ -76,24 +83,45 @@
 
 <script>
 // ===== CONFIG (EDITAR) =====
-var API_URL = "https://script.google.com/macros/s/AKfycbzp2dCd12UzG1ZmwKP_8zQzVyrfSgU2rp15Jr583ujVluAAD-zZTqwJZoZhjqiQd9glFg/exec"; // deployment "Cualquiera" de Apps Script (/exec)
+var API_URL = "https://script.google.com/macros/s/AKfycbzp2dCd12UzG1ZmwKP_8zQzVyrfSgU2rp15Jr583ujVluAAD-zZTqwJZoZhjqiQd9glFg/exec";
 // ===========================
 
 function qs(k){ return new URLSearchParams(location.search).get(k)||""; }
 var RUT = qs("rut"), SIG = qs("sig");
+var MODO = (qs("modo")==="ciego") ? "ciego" : "dirigido";
 var DATA = {stock:[], desinst:[], nombre:"", bodega:""};
-var stockMap={}, desiMap={}, extras={};
+var stockMap={}, desiMap={}, extras={}, SCANNED={};
 function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+document.getElementById("hmodo").textContent = (MODO==="ciego") ? "CIEGO" : "DIRIGIDO";
+document.getElementById("scanHelp").textContent = (MODO==="ciego")
+  ? "Escanea TODO lo que el técnico tiene físicamente. Al enviar, el sistema calcula faltantes y sobrantes."
+  : "Apunta al código del equipo; se marca solo. También puedes tocar un equipo para marcarlo a mano.";
+
+function showCards(){
+  var ciego = (MODO==="ciego");
+  document.getElementById("cardStock").style.display = ciego?"none":"";
+  document.getElementById("cardDesi").style.display  = ciego?"none":"";
+  document.getElementById("cardExtra").style.display = ciego?"none":"";
+  document.getElementById("cardScan").style.display  = ciego?"":"none";
+}
 
 function onChecklist(d){
   if(!d || d.error){ document.getElementById("hsub").textContent="Error al cargar: "+((d&&d.error)||"sin datos"); return; }
   DATA=d;
   document.getElementById("hsub").textContent=(d.nombre||RUT)+" · "+RUT+(d.bodega?(" · "+d.bodega):"");
-  renderList("listStock", d.stock, stockMap, "stock");
-  renderList("listDesi", d.desinst, desiMap, "desi");
-  refreshCounts();
+  showCards();
+  if(MODO==="dirigido"){
+    renderList("listStock", d.stock, stockMap, "stock");
+    renderList("listDesi", d.desinst, desiMap, "desi");
+    refreshCounts();
+  } else {
+    renderScan();
+  }
 }
+
+/* ---------- DIRIGIDO ---------- */
 function renderList(elId, items, map, tipo){
   var el=document.getElementById(elId), html="";
   items.forEach(function(x,i){
@@ -109,21 +137,6 @@ function renderList(elId, items, map, tipo){
     });
   });
 }
-function marcar(n){
-  var hit=stockMap[n]||desiMap[n];
-  if(hit){
-    var cb=document.getElementById(hit.id); if(!cb.checked){ cb.checked=true; }
-    var row=cb.closest(".row"); row.classList.add("on"); row.scrollIntoView({block:"center"});
-    toast("✔ "+hit.serie); refreshCounts(); return true;
-  }
-  if(!extras[n]){ extras[n]=n; renderExtras(); toast("➕ Sobrante: "+n); }
-  return false;
-}
-function renderExtras(){
-  var ks=Object.keys(extras);
-  document.getElementById("listExtra").innerHTML = ks.length ? ks.map(function(k){return '<span class="extra">'+esc(k)+'</span>';}).join(", ") : '<span class="muted">Ninguno.</span>';
-  refreshCounts();
-}
 function refreshCounts(){
   var s=DATA.stock.length, sc=document.querySelectorAll("#listStock input:checked").length;
   var d=DATA.desinst.length, dc=document.querySelectorAll("#listDesi input:checked").length;
@@ -131,16 +144,42 @@ function refreshCounts(){
   document.getElementById("cntDesi").textContent=dc+" / "+d+" devueltos";
   document.getElementById("cntExtra").textContent=Object.keys(extras).length;
 }
+function renderExtras(){
+  var ks=Object.keys(extras);
+  document.getElementById("listExtra").innerHTML = ks.length ? ks.map(function(k){return '<span class="extra">'+esc(k)+'</span>';}).join(", ") : '<span class="muted">Ninguno.</span>';
+  refreshCounts();
+}
+function marcar(n){
+  var hit=stockMap[n]||desiMap[n];
+  if(hit){
+    var cb=document.getElementById(hit.id); if(!cb.checked){ cb.checked=true; }
+    var row=cb.closest(".row"); row.classList.add("on"); row.scrollIntoView({block:"center"});
+    toast("✔ "+hit.serie); refreshCounts(); return;
+  }
+  if(!extras[n]){ extras[n]=n; renderExtras(); toast("➕ Sobrante: "+n); }
+}
+
+/* ---------- CIEGO ---------- */
+function renderScan(){
+  var ks=Object.keys(SCANNED);
+  document.getElementById("cntScan").textContent = ks.length+" escaneados";
+  document.getElementById("listScan").innerHTML = ks.length
+    ? ks.map(function(k){return '<div class="row"><div class="s">'+esc(k)+'</div></div>';}).join("")
+    : '<div class="muted" style="padding:8px">Escanea TODOS los equipos que el técnico tiene. No verás la lista esperada.</div>';
+}
+function escanearCiego(n){ if(!SCANNED[n]){ SCANNED[n]=1; renderScan(); toast("✔ "+n); } }
+
+/* ---------- común ---------- */
 var toastT;
 function toast(m){ var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("show");},1200); }
 
-// ===== Escáner =====
 var scanner=null, scanning=false, lastCode="", lastTime=0;
 function onScan(txt){
   var n=norm(txt), now=Date.now();
-  if(n===lastCode && now-lastTime<1500) return; // anti-doble
+  if(n===lastCode && now-lastTime<1500) return;
   lastCode=n; lastTime=now;
-  if(n.length>=4) marcar(n);
+  if(n.length<4) return;
+  if(MODO==="ciego") escanearCiego(n); else marcar(n);
 }
 document.getElementById("btnScan").addEventListener("click",function(){
   var btn=this;
@@ -154,13 +193,17 @@ document.getElementById("btnScan").addEventListener("click",function(){
     .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
 });
 
-// ===== Enviar =====
 document.getElementById("btnSend").addEventListener("click",function(){
-  var btn=this, msg=document.getElementById("sendMsg");
-  (document.getElementById("extraManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4 && !stockMap[n] && !desiMap[n]) extras[n]=n; });
-  var stock=DATA.stock.map(function(x){ return {serie:x.serie, encontrado:document.getElementById(stockMap[norm(x.serie)].id).checked}; });
-  var desinst=DATA.desinst.map(function(x){ return {serie:x.serie, devuelto:document.getElementById(desiMap[norm(x.serie)].id).checked}; });
-  var payload={sig:SIG, rut:RUT, nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), stock:stock, desinst:desinst, extras:Object.keys(extras)};
+  var btn=this, msg=document.getElementById("sendMsg"), payload;
+  if(MODO==="ciego"){
+    (document.getElementById("scanManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4) SCANNED[n]=1; });
+    payload={sig:SIG, rut:RUT, modo:"ciego", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), escaneadas:Object.keys(SCANNED)};
+  } else {
+    (document.getElementById("extraManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4 && !stockMap[n] && !desiMap[n]) extras[n]=n; });
+    var stock=DATA.stock.map(function(x){ return {serie:x.serie, encontrado:document.getElementById(stockMap[norm(x.serie)].id).checked}; });
+    var desinst=DATA.desinst.map(function(x){ return {serie:x.serie, devuelto:document.getElementById(desiMap[norm(x.serie)].id).checked}; });
+    payload={sig:SIG, rut:RUT, modo:"dirigido", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), stock:stock, desinst:desinst, extras:Object.keys(extras)};
+  }
   btn.disabled=true; msg.textContent="Enviando…";
   fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
     .then(function(){ msg.innerHTML='<b style="color:#16a34a">✅ Inventario enviado. El reporte llega a los auditores.</b>'; })
@@ -169,11 +212,11 @@ document.getElementById("btnSend").addEventListener("click",function(){
 
 // ===== Carga inicial (JSONP) =====
 (function(){
-  if(!RUT){ document.getElementById("hsub").textContent="Falta el RUT en el enlace (?rut=...)"; return; }
+  if(!RUT || !SIG){ document.getElementById("hsub").textContent="Enlace incompleto (falta rut o firma)."; return; }
   window.onChecklist=onChecklist;
   var s=document.createElement("script");
-  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=checklist&rut="+encodeURIComponent(RUT)+"&sig="+encodeURIComponent(SIG)+"&callback=onChecklist";
-  s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar el checklist (revisa la URL/permiso de la web app)."; };
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=checklist&rut="+encodeURIComponent(RUT)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+"&callback=onChecklist";
+  s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar (revisa la URL/permiso de la web app)."; };
   document.body.appendChild(s);
 })();
 </script>
