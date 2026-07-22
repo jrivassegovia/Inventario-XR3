@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Inventario XR3</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{--brand:#0b3a6b;--brand2:#1766b0;--ok:#16a34a;--bg:#eef2f7;--card:#fff;--line:#e6ebf2;--muted:#667a92;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:#12233b;font-size:15px;}
+  header{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5;}
+  header h1{margin:0;font-size:17px;} header .sub{font-size:12px;opacity:.9;margin-top:2px;}
+  .wrap{padding:12px 12px 90px;max-width:640px;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;}
+  .card h2{font-size:14px;margin:0 0 8px;color:var(--brand);}
+  input[type=text]{width:100%;padding:10px 12px;border:1px solid #cfd8e3;border-radius:10px;font-size:15px;}
+  button{font-size:15px;font-weight:700;border-radius:11px;border:1px solid #cfd8e3;background:#fff;padding:11px 14px;cursor:pointer;}
+  .btn-main{background:var(--ok);color:#fff;border-color:var(--ok);width:100%;padding:15px;font-size:17px;}
+  .btn-scan{background:var(--brand2);color:#fff;border-color:var(--brand2);width:100%;}
+  #reader{width:100%;border-radius:12px;overflow:hidden;margin-top:8px;}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid #eef2f7;cursor:pointer;}
+  .row:first-child{border-top:none;}
+  .row.on{background:#eafaf0;}
+  .row .chk{width:22px;height:22px;flex-shrink:0;}
+  .row .s{font-weight:700;font-variant-numeric:tabular-nums;} .row .d{color:var(--muted);font-size:12px;}
+  .cnt{font-size:12px;color:var(--muted);font-weight:700;}
+  .listwrap{max-height:38vh;overflow:auto;border:1px solid #eef2f7;border-radius:10px;}
+  .extra{color:#9a3412;font-weight:700;}
+  .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#0b3a6b;color:#fff;padding:10px 16px;border-radius:999px;font-weight:700;opacity:0;transition:opacity .2s;z-index:20;}
+  .toast.show{opacity:1;}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 12px;}
+  .muted{color:var(--muted);font-size:12px;}
+  textarea{width:100%;min-height:44px;border:1px solid #cfd8e3;border-radius:10px;padding:8px 10px;font-size:14px;font-family:inherit;}
+</style>
+</head>
+<body>
+<header>
+  <h1>📦 Inventario XR3</h1>
+  <div class="sub" id="hsub">Cargando…</div>
+</header>
+<div class="wrap">
+  <div class="card">
+    <input type="text" id="tomadoPor" placeholder="Tomado por (tu nombre)">
+  </div>
+
+  <div class="card">
+    <h2>📷 Escanear equipos</h2>
+    <button class="btn-scan" id="btnScan">▶ Iniciar escáner</button>
+    <div id="reader"></div>
+    <div class="muted" style="margin-top:6px">Apunta al código de barras/QR del equipo. Se marca solo. También puedes tocar un equipo para marcarlo a mano.</div>
+  </div>
+
+  <div class="card">
+    <h2>📦 Stock disponible <span class="cnt" id="cntStock"></span></h2>
+    <div class="listwrap"><div id="listStock"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>🔧 Desinstalados a devolver <span class="cnt" id="cntDesi"></span></h2>
+    <div class="listwrap"><div id="listDesi"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>➕ Sobrantes (no listados) <span class="cnt" id="cntExtra"></span></h2>
+    <div id="listExtra" class="muted">Ninguno.</div>
+    <textarea id="extraManual" placeholder="Opcional: pega aquí series no listadas (una por línea)"></textarea>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="btn-main" id="btnSend">📨 Enviar inventario</button>
+  <div class="muted" id="sendMsg" style="text-align:center;margin-top:6px"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== CONFIG (EDITAR) =====
+var API_URL = "PEGA_AQUI_LA_URL_EXEC_DE_LA_WEB_APP"; // deployment "Cualquiera" de Apps Script (/exec)
+// ===========================
+
+function qs(k){ return new URLSearchParams(location.search).get(k)||""; }
+var RUT = qs("rut"), SIG = qs("sig");
+var DATA = {stock:[], desinst:[], nombre:"", bodega:""};
+var stockMap={}, desiMap={}, extras={};
+function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
+function onChecklist(d){
+  if(!d || d.error){ document.getElementById("hsub").textContent="Error al cargar: "+((d&&d.error)||"sin datos"); return; }
+  DATA=d;
+  document.getElementById("hsub").textContent=(d.nombre||RUT)+" · "+RUT+(d.bodega?(" · "+d.bodega):"");
+  renderList("listStock", d.stock, stockMap, "stock");
+  renderList("listDesi", d.desinst, desiMap, "desi");
+  refreshCounts();
+}
+function renderList(elId, items, map, tipo){
+  var el=document.getElementById(elId), html="";
+  items.forEach(function(x,i){
+    var n=norm(x.serie), id=tipo+"_"+i;
+    html+='<div class="row" data-id="'+id+'"><input type="checkbox" class="chk" id="'+id+'"><div><div class="s">'+esc(x.serie)+'</div><div class="d">'+esc(tipo==="stock"?((x.cod||"")+" · "+(x.desc||"")):("desinst. "+(x.fecha||"")))+'</div></div></div>';
+    map[n]={id:id, serie:x.serie};
+  });
+  el.innerHTML=html||'<div class="muted" style="padding:8px">Sin equipos.</div>';
+  el.querySelectorAll(".row").forEach(function(row){
+    row.addEventListener("click",function(e){
+      if(e.target.tagName!=="INPUT"){ var cb=row.querySelector("input"); cb.checked=!cb.checked; }
+      row.classList.toggle("on", row.querySelector("input").checked); refreshCounts();
+    });
+  });
+}
+function marcar(n){
+  var hit=stockMap[n]||desiMap[n];
+  if(hit){
+    var cb=document.getElementById(hit.id); if(!cb.checked){ cb.checked=true; }
+    var row=cb.closest(".row"); row.classList.add("on"); row.scrollIntoView({block:"center"});
+    toast("✔ "+hit.serie); refreshCounts(); return true;
+  }
+  if(!extras[n]){ extras[n]=n; renderExtras(); toast("➕ Sobrante: "+n); }
+  return false;
+}
+function renderExtras(){
+  var ks=Object.keys(extras);
+  document.getElementById("listExtra").innerHTML = ks.length ? ks.map(function(k){return '<span class="extra">'+esc(k)+'</span>';}).join(", ") : '<span class="muted">Ninguno.</span>';
+  refreshCounts();
+}
+function refreshCounts(){
+  var s=DATA.stock.length, sc=document.querySelectorAll("#listStock input:checked").length;
+  var d=DATA.desinst.length, dc=document.querySelectorAll("#listDesi input:checked").length;
+  document.getElementById("cntStock").textContent=sc+" / "+s+" marcados";
+  document.getElementById("cntDesi").textContent=dc+" / "+d+" devueltos";
+  document.getElementById("cntExtra").textContent=Object.keys(extras).length;
+}
+var toastT;
+function toast(m){ var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("show");},1200); }
+
+// ===== Escáner =====
+var scanner=null, scanning=false, lastCode="", lastTime=0;
+function onScan(txt){
+  var n=norm(txt), now=Date.now();
+  if(n===lastCode && now-lastTime<1500) return; // anti-doble
+  lastCode=n; lastTime=now;
+  if(n.length>=4) marcar(n);
+}
+document.getElementById("btnScan").addEventListener("click",function(){
+  var btn=this;
+  if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";}); return; }
+  if(!window.Html5Qrcode){ alert("No se pudo cargar el escáner."); return; }
+  scanner=scanner||new Html5Qrcode("reader");
+  var cfg={fps:10, qrbox:{width:250,height:150},
+    formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_93]};
+  scanner.start({facingMode:"environment"}, cfg, onScan, function(){})
+    .then(function(){scanning=true;btn.textContent="⏸ Detener escáner";})
+    .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
+});
+
+// ===== Enviar =====
+document.getElementById("btnSend").addEventListener("click",function(){
+  var btn=this, msg=document.getElementById("sendMsg");
+  (document.getElementById("extraManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4 && !stockMap[n] && !desiMap[n]) extras[n]=n; });
+  var stock=DATA.stock.map(function(x){ return {serie:x.serie, encontrado:document.getElementById(stockMap[norm(x.serie)].id).checked}; });
+  var desinst=DATA.desinst.map(function(x){ return {serie:x.serie, devuelto:document.getElementById(desiMap[norm(x.serie)].id).checked}; });
+  var payload={sig:SIG, rut:RUT, nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), stock:stock, desinst:desinst, extras:Object.keys(extras)};
+  btn.disabled=true; msg.textContent="Enviando…";
+  fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
+    .then(function(){ msg.innerHTML='<b style="color:#16a34a">✅ Inventario enviado. El reporte llega a los auditores.</b>'; })
+    .catch(function(e){ msg.innerHTML='<b style="color:#dc2626">⚠ No se pudo enviar. Revisa la conexión.</b>'; btn.disabled=false; });
+});
+
+// ===== Carga inicial (JSONP) =====
+(function(){
+  if(!RUT){ document.getElementById("hsub").textContent="Falta el RUT en el enlace (?rut=...)"; return; }
+  window.onChecklist=onChecklist;
+  var s=document.createElement("script");
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=checklist&rut="+encodeURIComponent(RUT)+"&sig="+encodeURIComponent(SIG)+"&callback=onChecklist";
+  s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar el checklist (revisa la URL/permiso de la web app)."; };
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>
