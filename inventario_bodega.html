@@ -189,12 +189,28 @@ document.getElementById("btnSend").addEventListener("click",function(){
   var series=[]; Object.keys(SERIES).forEach(function(c){ SERIES[c].forEach(function(se){ series.push({cod:c, serie:se}); }); });
   var contados=conteo.filter(function(c){return c.contado;}).length;
   if(!contados){ msg.innerHTML='<b style="color:#dc2626">Ingresa al menos un conteo físico.</b>'; return; }
-  var payload={kind:"bodega", sig:SIG, bodega:BODEGA, modo:MODO, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), conteo:conteo, series:series};
+  var TOKEN="B"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  var payload={kind:"bodega", sig:SIG, bodega:BODEGA, modo:MODO, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), conteo:conteo, series:series, token:TOKEN};
   btn.disabled=true; msg.textContent="Enviando…";
   fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
-    .then(function(){ msg.innerHTML='<b style="color:#16a34a">✅ Inventario enviado. El reporte llega a auditores y logística.</b>'; })
-    .catch(function(e){ msg.innerHTML='<b style="color:#dc2626">⚠ No se pudo enviar. Revisa la conexión.</b>'; btn.disabled=false; });
+    .then(function(){ msg.textContent="Enviado. Confirmando registro…"; setTimeout(function(){confirmar(TOKEN,0);}, 2500); })
+    .catch(function(e){ msg.innerHTML='<b style="color:#dc2626">⚠ No se pudo enviar. Revisa la conexión e inténtalo de nuevo.</b>'; btn.disabled=false; });
 });
+
+// Confirma DE VERDAD que el envío quedó registrado en el servidor (por token), reintentando unas veces.
+function confirmar(token, intento){
+  var msg=document.getElementById("sendMsg"), btn=document.getElementById("btnSend");
+  var s=document.createElement("script");
+  window.__invchk=function(r){
+    if(r && r.recibido){
+      msg.innerHTML='<b style="color:#16a34a">✅ Inventario registrado.'+(r.procesado==="OK"?' El reporte llega a auditores y logística.':' Procesando el reporte…')+'</b>';
+    } else if(intento<4){ setTimeout(function(){confirmar(token, intento+1);}, 3000); }
+    else { msg.innerHTML='<b style="color:#d97706">⚠ Se envió, pero no pudimos confirmar el registro. Espera un momento y vuelve a enviar, o avisa a soporte.</b>'; btn.disabled=false; }
+  };
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=invbod_check&bodega="+encodeURIComponent(BODEGA)+"&sig="+encodeURIComponent(SIG)+"&token="+encodeURIComponent(token)+"&callback=__invchk&_="+Date.now();
+  s.onerror=function(){ if(intento<4){ setTimeout(function(){confirmar(token, intento+1);}, 3000); } else { msg.innerHTML='<b style="color:#d97706">⚠ Se envió; no se pudo confirmar el registro. Recarga para verificar o avisa a soporte.</b>'; btn.disabled=false; } };
+  document.body.appendChild(s);
+}
 
 // ===== Carga inicial (JSONP) =====
 (function(){
