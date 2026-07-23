@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Inventario de Bodega XR3</title>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{--brand:#0b3a6b;--brand2:#1766b0;--ok:#16a34a;--bg:#eef2f7;--card:#fff;--line:#e6ebf2;--muted:#667a92;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:#12233b;font-size:15px;}
+  header{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5;}
+  header h1{margin:0;font-size:17px;} header .sub{font-size:12px;opacity:.9;margin-top:2px;}
+  .modo{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);}
+  .wrap{padding:12px 12px 100px;max-width:680px;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;}
+  .card h2{font-size:14px;margin:0 0 8px;color:var(--brand);}
+  input[type=text],input[type=number]{width:100%;padding:10px 12px;border:1px solid #cfd8e3;border-radius:10px;font-size:15px;}
+  button{font-size:15px;font-weight:700;border-radius:11px;border:1px solid #cfd8e3;background:#fff;padding:11px 14px;cursor:pointer;}
+  .btn-main{background:var(--ok);color:#fff;border-color:var(--ok);width:100%;padding:15px;font-size:17px;}
+  .btn-scan{background:var(--brand2);color:#fff;border-color:var(--brand2);width:100%;}
+  #reader{width:100%;border-radius:12px;overflow:hidden;margin-top:8px;}
+  .active-cod{margin-top:8px;font-size:13px;font-weight:700;color:var(--brand);}
+  .listwrap{max-height:52vh;overflow:auto;border:1px solid #eef2f7;border-radius:10px;}
+  .irow{display:flex;align-items:center;gap:8px;padding:8px 8px;border-top:1px solid #eef2f7;}
+  .irow:first-child{border-top:none;}
+  .irow.on{background:#eafaf0;}
+  .irow .info{flex:1;min-width:0;}
+  .irow .cod{font-weight:700;font-variant-numeric:tabular-nums;}
+  .irow .desc{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tag{display:inline-block;padding:0 6px;border-radius:6px;font-size:10px;font-weight:700;vertical-align:middle;margin-left:4px;}
+  .tag.ser{background:#e0edff;color:#1766b0;} .tag.fer{background:#eef2f7;color:#667a92;}
+  .esp{font-size:12px;color:var(--muted);white-space:nowrap;}
+  .fis{width:74px;flex-shrink:0;text-align:center;padding:8px 6px;}
+  .scanbtn{flex-shrink:0;padding:8px 10px;border-radius:9px;}
+  .scanbtn.on{background:var(--brand2);color:#fff;border-color:var(--brand2);}
+  .sercount{font-size:11px;color:var(--brand2);font-weight:700;}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0b3a6b;color:#fff;padding:10px 16px;border-radius:999px;font-weight:700;opacity:0;transition:opacity .2s;z-index:20;}
+  .toast.show{opacity:1;}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 12px;}
+  .muted{color:var(--muted);font-size:12px;}
+  .sumline{font-size:12px;color:var(--muted);margin-top:6px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏬 Inventario de Bodega <span class="modo" id="hmodo"></span></h1>
+  <div class="sub" id="hsub">Cargando…</div>
+</header>
+<div class="wrap">
+  <div class="card">
+    <input type="text" id="tomadoPor" placeholder="Tomado por (tu nombre)">
+  </div>
+
+  <div class="card">
+    <h2>📷 Escanear series (material seriado)</h2>
+    <button class="btn-scan" id="btnScan">▶ Iniciar escáner</button>
+    <div id="reader"></div>
+    <div class="active-cod" id="activeCod">Toca 📷 en un código seriado para escanear sus series.</div>
+  </div>
+
+  <div class="card">
+    <h2>📋 Materiales de la bodega <span class="muted" id="cntItems"></span></h2>
+    <input type="text" id="filtro" placeholder="Filtrar por código o descripción…" style="margin-bottom:8px">
+    <div class="listwrap"><div id="list" class="muted" style="padding:8px">Cargando materiales…</div></div>
+    <div class="sumline" id="sumline"></div>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="btn-main" id="btnSend">📨 Enviar inventario de bodega</button>
+  <div class="muted" id="sendMsg" style="text-align:center;margin-top:6px"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== CONFIG (EDITAR: misma URL /exec del endpoint de inventario) =====
+var API_URL = "https://script.google.com/macros/s/AKfycbzp2dCd12UzG1ZmwKP_8zQzVyrfSgU2rp15Jr583ujVluAAD-zZTqwJZoZhjqiQd9glFg/exec";
+// =======================================================================
+
+function qs(k){ return new URLSearchParams(location.search).get(k)||""; }
+var BODEGA = qs("bodega"), SIG = qs("sig");
+var MODO = (qs("modo")==="ciego") ? "ciego" : "dirigido";
+var ITEMS = [];            // [{cod,desc,tipo,saldo,ser}]
+var SERIES = {};           // cod -> [serie,...]
+var ACTIVE = "";           // código seriado activo para escanear
+function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function isSer(t){ return /SERIAD/i.test(String(t||"")); }
+
+document.getElementById("hmodo").textContent = (MODO==="ciego") ? "CIEGO" : "DIRIGIDO";
+
+function onBodega(d){
+  if(!d || d.error){ document.getElementById("hsub").textContent="Error al cargar: "+((d&&d.error)||"sin datos"); return; }
+  ITEMS = (d.items||[]).map(function(x){ return {cod:x.cod, desc:x.desc||"", tipo:x.tipo||"", saldo:x.saldo, ser:isSer(x.tipo)}; });
+  document.getElementById("hsub").textContent = "Bodega "+(d.bodega||BODEGA)+" · "+ITEMS.length+" códigos";
+  renderList();
+}
+
+function fisId(i){ return "f_"+i; }
+function rowHtml(x,i){
+  var espTxt = (MODO==="ciego" || x.saldo==null) ? '<span class="esp">—</span>' : '<span class="esp">esp. <b>'+esc(String(x.saldo))+'</b></span>';
+  var tag = x.ser ? '<span class="tag ser">SERIE</span>' : '<span class="tag fer">CANT</span>';
+  var scan = x.ser ? '<button class="scanbtn" data-cod="'+esc(x.cod)+'" data-idx="'+i+'">📷</button>' : '';
+  var serc = x.ser ? '<div class="sercount" id="sc_'+i+'"></div>' : '';
+  return '<div class="irow" data-idx="'+i+'" data-txt="'+esc((x.cod+" "+x.desc).toUpperCase())+'">'
+    +'<div class="info"><div class="cod">'+esc(x.cod)+tag+'</div><div class="desc">'+esc(x.desc)+'</div>'+espTxt+serc+'</div>'
+    +'<input type="number" inputmode="numeric" min="0" class="fis" id="'+fisId(i)+'" placeholder="físico">'
+    +scan+'</div>';
+}
+function renderList(){
+  var el=document.getElementById("list");
+  el.innerHTML = ITEMS.length ? ITEMS.map(rowHtml).join("") : '<div class="muted" style="padding:8px">Sin materiales en esta bodega.</div>';
+  document.getElementById("cntItems").textContent = ITEMS.length+" códigos";
+  // listeners: input marca la fila; botón scan activa el código
+  el.querySelectorAll(".fis").forEach(function(inp){
+    inp.addEventListener("input",function(){ inp.closest(".irow").classList.toggle("on", inp.value!==""); refreshSum(); });
+  });
+  el.querySelectorAll(".scanbtn").forEach(function(b){
+    b.addEventListener("click",function(){ setActive(b.getAttribute("data-cod")); });
+  });
+  refreshSum();
+}
+function setActive(cod){
+  ACTIVE = cod;
+  document.getElementById("activeCod").innerHTML = '📷 Escaneando series para: <b>'+esc(cod)+'</b>';
+  document.querySelectorAll(".scanbtn").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-cod")===cod); });
+  if(!scanning) document.getElementById("btnScan").click();
+  document.getElementById("reader").scrollIntoView({block:"center"});
+  toast("Escaneando "+cod);
+}
+function addSerie(cod, n){
+  if(!SERIES[cod]) SERIES[cod]=[];
+  if(SERIES[cod].indexOf(n)>=0){ toast("Repetida: "+n); return; }
+  SERIES[cod].push(n);
+  // encuentra la fila del código y setea el físico = nº de series
+  var idx=-1; ITEMS.forEach(function(x,i){ if(x.cod===cod) idx=i; });
+  if(idx>=0){
+    var inp=document.getElementById(fisId(idx)); inp.value=SERIES[cod].length; inp.closest(".irow").classList.add("on");
+    var sc=document.getElementById("sc_"+idx); if(sc) sc.textContent=SERIES[cod].length+" series escaneadas";
+  }
+  toast("✔ "+n); refreshSum();
+}
+function refreshSum(){
+  var cont=0; ITEMS.forEach(function(x,i){ if((document.getElementById(fisId(i))||{}).value!=="") cont++; });
+  var totSer=0; Object.keys(SERIES).forEach(function(c){ totSer+=SERIES[c].length; });
+  document.getElementById("sumline").textContent = cont+" de "+ITEMS.length+" códigos contados · "+totSer+" series escaneadas";
+}
+
+document.getElementById("filtro").addEventListener("input",function(){
+  var q=this.value.toUpperCase().trim();
+  document.querySelectorAll("#list .irow").forEach(function(r){
+    r.style.display = (!q || r.getAttribute("data-txt").indexOf(q)>=0) ? "" : "none";
+  });
+});
+
+/* ---------- escáner ---------- */
+var toastT;
+function toast(m){ var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("show");},1200); }
+var scanner=null, scanning=false, lastCode="", lastTime=0;
+function onScan(txt){
+  var n=norm(txt), now=Date.now();
+  if(n===lastCode && now-lastTime<1500) return;
+  lastCode=n; lastTime=now;
+  if(n.length<4) return;
+  if(!ACTIVE){ toast("Toca 📷 en un código seriado"); return; }
+  addSerie(ACTIVE, n);
+}
+document.getElementById("btnScan").addEventListener("click",function(){
+  var btn=this;
+  if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";}); return; }
+  if(!window.Html5Qrcode){ alert("No se pudo cargar el escáner."); return; }
+  scanner=scanner||new Html5Qrcode("reader");
+  var cfg={fps:10, qrbox:{width:250,height:150},
+    formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_93]};
+  scanner.start({facingMode:"environment"}, cfg, onScan, function(){})
+    .then(function(){scanning=true;btn.textContent="⏸ Detener escáner";})
+    .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
+});
+
+/* ---------- enviar ---------- */
+document.getElementById("btnSend").addEventListener("click",function(){
+  var btn=this, msg=document.getElementById("sendMsg");
+  var conteo=ITEMS.map(function(x,i){
+    var v=(document.getElementById(fisId(i))||{}).value;
+    return {cod:x.cod, desc:x.desc, tipo:x.tipo, fisico:(v===""?0:Number(v)||0), contado:(v!=="")};
+  });
+  var series=[]; Object.keys(SERIES).forEach(function(c){ SERIES[c].forEach(function(se){ series.push({cod:c, serie:se}); }); });
+  var contados=conteo.filter(function(c){return c.contado;}).length;
+  if(!contados){ msg.innerHTML='<b style="color:#dc2626">Ingresa al menos un conteo físico.</b>'; return; }
+  var payload={kind:"bodega", sig:SIG, bodega:BODEGA, modo:MODO, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), conteo:conteo, series:series};
+  btn.disabled=true; msg.textContent="Enviando…";
+  fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
+    .then(function(){ msg.innerHTML='<b style="color:#16a34a">✅ Inventario enviado. El reporte llega a auditores y logística.</b>'; })
+    .catch(function(e){ msg.innerHTML='<b style="color:#dc2626">⚠ No se pudo enviar. Revisa la conexión.</b>'; btn.disabled=false; });
+});
+
+// ===== Carga inicial (JSONP) =====
+(function(){
+  if(!BODEGA || !SIG){ document.getElementById("hsub").textContent="Enlace incompleto (falta bodega o firma)."; return; }
+  window.onBodega=onBodega;
+  var s=document.createElement("script");
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=bodega&bodega="+encodeURIComponent(BODEGA)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+"&callback=onBodega";
+  s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar (revisa la URL/permiso de la web app)."; };
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>
