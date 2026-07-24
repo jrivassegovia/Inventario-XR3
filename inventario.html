@@ -49,6 +49,10 @@
     <h2>📷 Escanear equipos</h2>
     <button class="btn-scan" id="btnScan">▶ Iniciar escáner</button>
     <div id="reader"></div>
+    <div id="scanCtl" style="display:none;align-items:center;gap:10px;margin-top:8px;">
+      <button type="button" id="btnTorch" style="display:none">🔦 Luz</button>
+      <label id="zoomWrap" style="flex:1;font-size:12px;display:none">Zoom <input type="range" id="zoomR" min="1" max="5" step="0.1" value="1" style="width:100%;vertical-align:middle"></label>
+    </div>
     <div class="muted" id="scanHelp" style="margin-top:6px"></div>
   </div>
 
@@ -181,15 +185,29 @@ function onScan(txt){
   if(n.length<4) return;
   if(MODO==="ciego") escanearCiego(n); else marcar(n);
 }
+function scanFormats(){ return [Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_93,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.DATA_MATRIX]; }
+// Configura zoom y linterna si el dispositivo los soporta (ayuda con códigos muy chicos).
+function setupScanCtl(){
+  var ctl=document.getElementById("scanCtl"); if(!ctl) return;
+  var caps={}; try{ caps=scanner.getRunningTrackCapabilities()||{}; }catch(e){}
+  var any=false, zR=document.getElementById("zoomR"), zW=document.getElementById("zoomWrap"), tB=document.getElementById("btnTorch");
+  if(caps.zoom && zR){ zR.min=caps.zoom.min||1; zR.max=caps.zoom.max||3; zR.step=caps.zoom.step||0.1; zR.value=caps.zoom.min||1; zW.style.display=""; any=true;
+    zR.oninput=function(){ try{ scanner.applyVideoConstraints({advanced:[{zoom:parseFloat(zR.value)}]}); }catch(e){} }; }
+  else if(zW){ zW.style.display="none"; }
+  if(caps.torch && tB){ tB.style.display=""; any=true; var on=false;
+    tB.onclick=function(){ on=!on; try{ scanner.applyVideoConstraints({advanced:[{torch:on}]}); tB.textContent=on?"🔦 Luz ✓":"🔦 Luz"; }catch(e){} }; }
+  else if(tB){ tB.style.display="none"; }
+  ctl.style.display = any?"flex":"none";
+}
 document.getElementById("btnScan").addEventListener("click",function(){
   var btn=this;
-  if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";}); return; }
+  if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";document.getElementById("scanCtl").style.display="none";}); return; }
   if(!window.Html5Qrcode){ alert("No se pudo cargar el escáner."); return; }
   scanner=scanner||new Html5Qrcode("reader");
-  var cfg={fps:10, qrbox:{width:250,height:150},
-    formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_93]};
-  scanner.start({facingMode:"environment"}, cfg, onScan, function(){})
-    .then(function(){scanning=true;btn.textContent="⏸ Detener escáner";})
+  var cfg={ fps:12, qrbox:{width:260,height:170}, experimentalFeatures:{useBarCodeDetectorIfSupported:true}, formatsToSupport:scanFormats() };
+  var camCfg={ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] };
+  scanner.start(camCfg, cfg, onScan, function(){})
+    .then(function(){ scanning=true; btn.textContent="⏸ Detener escáner"; setupScanCtl(); })
     .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
 });
 
