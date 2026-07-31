@@ -91,6 +91,7 @@ var API_URL = "https://script.google.com/macros/s/AKfycbzp2dCd12UzG1ZmwKP_8zQzVy
 function qs(k){ return new URLSearchParams(location.search).get(k)||""; }
 var BODEGA = qs("bodega"), SIG = qs("sig");
 var MODO = (qs("modo")==="ciego") ? "ciego" : "dirigido";
+var CODS = qs("cods");   // dirigido por códigos elegidos por el auditor (opcional)
 var ITEMS = [];            // [{cod,desc,tipo,saldo,ser}]
 var SERIES = {};           // cod -> [serie,...]
 var ACTIVE = "";           // código seriado activo para escanear
@@ -249,7 +250,7 @@ function confirmar(token, intento){
   if(!BODEGA || !SIG){ document.getElementById("hsub").textContent="Enlace incompleto (falta bodega o firma)."; return; }
   window.onBodega=onBodega;
   var s=document.createElement("script");
-  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=bodega&bodega="+encodeURIComponent(BODEGA)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+"&callback=onBodega";
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=bodega&bodega="+encodeURIComponent(BODEGA)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+(CODS?("&cods="+encodeURIComponent(CODS)):"")+"&callback=onBodega";
   s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar (revisa la URL/permiso de la web app)."; };
   document.body.appendChild(s);
 })();

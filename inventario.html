@@ -93,6 +93,7 @@ var API_URL = "https://script.google.com/macros/s/AKfycbzp2dCd12UzG1ZmwKP_8zQzVy
 function qs(k){ return new URLSearchParams(location.search).get(k)||""; }
 var RUT = qs("rut"), SIG = qs("sig");
 var MODO = (qs("modo")==="ciego") ? "ciego" : "dirigido";
+var CODS = qs("cods");   // dirigido por códigos elegidos por el auditor (opcional)
 var DATA = {stock:[], desinst:[], nombre:"", bodega:""};
 var stockMap={}, desiMap={}, extras={}, SCANNED={};
 function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
@@ -233,7 +234,7 @@ document.getElementById("btnSend").addEventListener("click",function(){
   if(!RUT || !SIG){ document.getElementById("hsub").textContent="Enlace incompleto (falta rut o firma)."; return; }
   window.onChecklist=onChecklist;
   var s=document.createElement("script");
-  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=checklist&rut="+encodeURIComponent(RUT)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+"&callback=onChecklist";
+  s.src=API_URL+(API_URL.indexOf("?")>=0?"&":"?")+"action=checklist&rut="+encodeURIComponent(RUT)+"&modo="+MODO+"&sig="+encodeURIComponent(SIG)+(CODS?("&cods="+encodeURIComponent(CODS)):"")+"&callback=onChecklist";
   s.onerror=function(){ document.getElementById("hsub").textContent="No se pudo cargar (revisa la URL/permiso de la web app)."; };
   document.body.appendChild(s);
 })();
