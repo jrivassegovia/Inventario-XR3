@@ -207,8 +207,9 @@ document.getElementById("btnScan").addEventListener("click",function(){
   if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";document.getElementById("scanCtl").style.display="none";}); return; }
   if(!window.Html5Qrcode){ alert("No se pudo cargar el escáner."); return; }
   scanner=scanner||new Html5Qrcode("reader");
-  var cfg={ fps:12, qrbox:{width:260,height:170}, experimentalFeatures:{useBarCodeDetectorIfSupported:true}, formatsToSupport:scanFormats() };
-  var camCfg={ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] };
+  var cfg={ fps:12, qrbox:{width:260,height:170}, experimentalFeatures:{useBarCodeDetectorIfSupported:true}, formatsToSupport:scanFormats(),
+            videoConstraints:{ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] } };
+  var camCfg={ facingMode:"environment" };   // 1 sola clave (Html5Qrcode lo exige); la resolución va en videoConstraints
   scanner.start(camCfg, cfg, onScan, function(){})
     .then(function(){ scanning=true; btn.textContent="⏸ Detener escáner"; setupScanCtl(); })
     .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
