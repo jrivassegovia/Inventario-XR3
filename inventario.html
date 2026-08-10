@@ -52,6 +52,7 @@
     <div id="scanCtl" style="display:none;align-items:center;gap:10px;margin-top:8px;">
       <button type="button" id="btnTorch" style="display:none">🔦 Luz</button>
       <label id="zoomWrap" style="flex:1;font-size:12px;display:none">Zoom <input type="range" id="zoomR" min="1" max="5" step="0.1" value="1" style="width:100%;vertical-align:middle"></label>
+      <label id="boxWrap" style="flex:1;font-size:12px">Recuadro <input type="range" id="boxR" min="140" max="440" step="10" value="260" style="width:100%;vertical-align:middle"></label>
     </div>
     <div class="muted" id="scanHelp" style="margin-top:6px"></div>
   </div>
@@ -209,19 +210,30 @@ function setupScanCtl(){
   if(caps.torch && tB){ tB.style.display=""; any=true; var on=false;
     tB.onclick=function(){ on=!on; try{ scanner.applyVideoConstraints({advanced:[{torch:on}]}); tB.textContent=on?"🔦 Luz ✓":"🔦 Luz"; }catch(e){} }; }
   else if(tB){ tB.style.display="none"; }
-  ctl.style.display = any?"flex":"none";
+  // Control de tamaño del recuadro (siempre disponible): al soltarlo, reinicia el escáner con el nuevo tamaño.
+  var bR=document.getElementById("boxR");
+  if(bR){ bR.onchange=function(){ var v=parseInt(bR.value,10)||260; QBOX={width:v, height:Math.round(v*0.66)}; restartScanner(); }; }
+  ctl.style.display="flex";   // siempre visible (el recuadro se puede ajustar aunque no haya zoom/linterna)
 }
+var QBOX={width:260,height:170};
+function buildCfg(){
+  return { fps:12,
+    qrbox:function(vw,vh){ return { width:Math.min(QBOX.width, Math.floor(vw*0.92)), height:Math.min(QBOX.height, Math.floor(vh*0.75)) }; },
+    experimentalFeatures:{useBarCodeDetectorIfSupported:true}, formatsToSupport:scanFormats(),
+    videoConstraints:{ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] } };
+}
+function startScanner(){
+  scanner=scanner||new Html5Qrcode("reader");
+  scanner.start({facingMode:"environment"}, buildCfg(), onScan, function(){})
+    .then(function(){ scanning=true; document.getElementById("btnScan").textContent="⏸ Detener escáner"; setupScanCtl(); })
+    .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
+}
+function restartScanner(){ if(!scanner||!scanning) return; scanner.stop().then(function(){ scanning=false; startScanner(); }).catch(function(){}); }
 document.getElementById("btnScan").addEventListener("click",function(){
   var btn=this;
   if(scanning){ scanner.stop().then(function(){scanning=false;btn.textContent="▶ Iniciar escáner";document.getElementById("scanCtl").style.display="none";}); return; }
   if(!window.Html5Qrcode){ alert("No se pudo cargar el escáner."); return; }
-  scanner=scanner||new Html5Qrcode("reader");
-  var cfg={ fps:12, qrbox:{width:260,height:170}, experimentalFeatures:{useBarCodeDetectorIfSupported:true}, formatsToSupport:scanFormats(),
-            videoConstraints:{ facingMode:"environment", width:{ideal:1920}, height:{ideal:1080}, advanced:[{focusMode:"continuous"}] } };
-  var camCfg={ facingMode:"environment" };   // 1 sola clave (Html5Qrcode lo exige); la resolución va en videoConstraints
-  scanner.start(camCfg, cfg, onScan, function(){})
-    .then(function(){ scanning=true; btn.textContent="⏸ Detener escáner"; setupScanCtl(); })
-    .catch(function(err){ alert("No se pudo abrir la cámara: "+err); });
+  startScanner();
 });
 
 document.getElementById("btnSend").addEventListener("click",function(){
