@@ -95,6 +95,16 @@ var CODS = qs("cods");   // dirigido por códigos elegidos por el auditor (opcio
 var ITEMS = [];            // [{cod,desc,tipo,saldo,ser}]
 var SERIES = {};           // cod -> [serie,...]
 var ACTIVE = "";           // código seriado activo para escanear
+var FOTOS = {};            // serie normalizada -> dataURL (foto del momento del escaneo)
+function capFrame(){
+  try{
+    var v=document.querySelector('#reader video'); if(!v||!v.videoWidth) return '';
+    var w=Math.min(480,v.videoWidth), h=Math.round(w*v.videoHeight/v.videoWidth);
+    var c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(v,0,0,w,h);
+    return c.toDataURL('image/jpeg',0.42);
+  }catch(e){ return ''; }
+}
 function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
 function isSer(t){ return /SERIAD/i.test(String(t||"")); }
@@ -144,6 +154,7 @@ function addSerie(cod, n){
   if(!SERIES[cod]) SERIES[cod]=[];
   if(SERIES[cod].indexOf(n)>=0){ toast("Repetida: "+n); return; }
   SERIES[cod].push(n);
+  if(!FOTOS[n]){ var _img=capFrame(); if(_img) FOTOS[n]=_img; }   // foto del momento del escaneo
   // encuentra la fila del código y setea el físico = nº de series
   var idx=-1; ITEMS.forEach(function(x,i){ if(x.cod===cod) idx=i; });
   if(idx>=0){
@@ -223,7 +234,8 @@ document.getElementById("btnSend").addEventListener("click",function(){
   var contados=conteo.filter(function(c){return c.contado;}).length;
   if(!contados){ msg.innerHTML='<b style="color:#dc2626">Ingresa al menos un conteo físico.</b>'; return; }
   var TOKEN="B"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-  var payload={kind:"bodega", sig:SIG, bodega:BODEGA, modo:MODO, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), conteo:conteo, series:series, token:TOKEN};
+  var fotos=Object.keys(FOTOS).map(function(se){ return {serie:se, img:FOTOS[se]}; });
+  var payload={kind:"bodega", sig:SIG, bodega:BODEGA, modo:MODO, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), conteo:conteo, series:series, fotos:fotos, token:TOKEN};
   btn.disabled=true; msg.textContent="Enviando…";
   fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
     .then(function(){ msg.textContent="Enviado. Confirmando registro…"; setTimeout(function(){confirmar(TOKEN,0);}, 2500); })

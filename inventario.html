@@ -96,6 +96,16 @@ var MODO = (qs("modo")==="ciego") ? "ciego" : "dirigido";
 var CODS = qs("cods");   // dirigido por códigos elegidos por el auditor (opcional)
 var DATA = {stock:[], desinst:[], nombre:"", bodega:""};
 var stockMap={}, desiMap={}, extras={}, SCANNED={};
+var FOTOS={};              // serie normalizada -> dataURL (foto del momento del escaneo)
+function capFrame(){
+  try{
+    var v=document.querySelector('#reader video'); if(!v||!v.videoWidth) return '';
+    var w=Math.min(480,v.videoWidth), h=Math.round(w*v.videoHeight/v.videoWidth);
+    var c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(v,0,0,w,h);
+    return c.toDataURL('image/jpeg',0.42);
+  }catch(e){ return ''; }
+}
 function norm(s){ return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,""); }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
 
@@ -184,6 +194,7 @@ function onScan(txt){
   if(n===lastCode && now-lastTime<1500) return;
   lastCode=n; lastTime=now;
   if(n.length<4) return;
+  if(!FOTOS[n]){ var _img=capFrame(); if(_img) FOTOS[n]=_img; }   // foto del momento del escaneo
   if(MODO==="ciego") escanearCiego(n); else marcar(n);
 }
 function scanFormats(){ return [Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_93,Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.DATA_MATRIX]; }
@@ -214,14 +225,15 @@ document.getElementById("btnScan").addEventListener("click",function(){
 
 document.getElementById("btnSend").addEventListener("click",function(){
   var btn=this, msg=document.getElementById("sendMsg"), payload;
+  var fotos=Object.keys(FOTOS).map(function(se){ return {serie:se, img:FOTOS[se]}; });
   if(MODO==="ciego"){
     (document.getElementById("scanManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4) SCANNED[n]=1; });
-    payload={sig:SIG, rut:RUT, modo:"ciego", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), escaneadas:Object.keys(SCANNED)};
+    payload={sig:SIG, rut:RUT, modo:"ciego", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), escaneadas:Object.keys(SCANNED), fotos:fotos};
   } else {
     (document.getElementById("extraManual").value||"").split(/[\n,;]+/).forEach(function(s){ var n=norm(s); if(n.length>=4 && !stockMap[n] && !desiMap[n]) extras[n]=n; });
     var stock=DATA.stock.map(function(x){ return {serie:x.serie, encontrado:document.getElementById(stockMap[norm(x.serie)].id).checked}; });
     var desinst=DATA.desinst.map(function(x){ return {serie:x.serie, devuelto:document.getElementById(desiMap[norm(x.serie)].id).checked}; });
-    payload={sig:SIG, rut:RUT, modo:"dirigido", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), stock:stock, desinst:desinst, extras:Object.keys(extras)};
+    payload={sig:SIG, rut:RUT, modo:"dirigido", nombre:DATA.nombre, bodega:DATA.bodega, tomadoPor:(document.getElementById("tomadoPor").value||"").trim(), stock:stock, desinst:desinst, extras:Object.keys(extras), fotos:fotos};
   }
   btn.disabled=true; msg.textContent="Enviando…";
   fetch(API_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(payload)})
